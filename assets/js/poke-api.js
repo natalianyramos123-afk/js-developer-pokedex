@@ -1,6 +1,36 @@
 
 const pokeApi = {}
 
+
+function getEvolutionChainNames(chain) {
+    const evolutionChain = [];
+
+
+    function traverseChain(currentChain) {
+        evolutionChain.push(currentChain.species.name);
+
+        if (currentChain.evolves_to.length > 0) {
+            traverseChain(currentChain.evolves_to[0]);
+        }
+    }
+
+    traverseChain(chain);
+    return evolutionChain;
+}
+
+
+pokeApi.getEvolutionChain = (speciesUrl) => {
+    return fetch(speciesUrl)
+        .then(response => response.json())
+        .then(speciesDetail => {
+            const chainUrl = speciesDetail.evolution_chain.url;
+            return fetch(chainUrl);
+        })
+        .then(response => response.json())
+        .then(evolutionDetail => getEvolutionChainNames(evolutionDetail.chain));
+}
+
+
 function convertPokeApiDetailToPokemon(pokeDetail) {
     const pokemon = new Pokemon()
     pokemon.number = pokeDetail.id
@@ -12,7 +42,17 @@ function convertPokeApiDetailToPokemon(pokeDetail) {
     pokemon.types = types
     pokemon.type = type
 
-    pokemon.photo = pokeDetail.sprites.other.dream_world.front_default
+    pokemon.photo = pokeDetail.sprites.versions['generation-v']['black-white'].animated.front_default
+
+    pokemon.weight = pokeDetail.weight
+    pokemon.height = pokeDetail.height
+    pokemon.stats = pokeDetail.stats.map(statSlot => ({
+        name: statSlot.stat.name,
+        base_stat: statSlot.base_stat
+    }))
+
+
+    pokemon.speciesUrl = pokeDetail.species.url;
 
     return pokemon
 }
@@ -33,3 +73,19 @@ pokeApi.getPokemons = (offset = 0, limit = 5) => {
         .then((detailRequests) => Promise.all(detailRequests))
         .then((pokemonsDetails) => pokemonsDetails)
 }
+
+pokeApi.getPokemonById = (id) => {
+    const url = `https://pokeapi.co/api/v2/pokemon/${id}/`;
+
+    return fetch(url)
+        .then((response) => response.json())
+        .then(pokeDetail => {
+            const pokemon = convertPokeApiDetailToPokemon(pokeDetail);
+
+            return pokeApi.getEvolutionChain(pokemon.speciesUrl)
+                .then(evolutionChain => {
+                    pokemon.evolutionChain = evolutionChain;
+                    return pokemon;
+                });
+        });
+};
